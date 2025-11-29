@@ -483,10 +483,9 @@ class AMCLclsFirestoreService {
   // Obtener ubicaciones de respuestas para mapa
   Future<List<AMCLclsLocationData>> getResponseLocations() async {
     try {
+      // Consulta sin orderBy para evitar necesidad de índice compuesto
       QuerySnapshot responsesSnapshot = await _firestore
           .collection('amcl_caso2_responses')
-          .where('location', isNull: false)
-          .orderBy('completedAt', descending: true)
           .limit(100)
           .get();
       
@@ -496,7 +495,8 @@ class AMCLclsFirestoreService {
         var data = doc.data() as Map<String, dynamic>;
         String? locationStr = data['location'];
         
-        if (locationStr != null && locationStr.isNotEmpty) {
+        // Solo procesar respuestas con ubicación válida
+        if (locationStr != null && locationStr.isNotEmpty && locationStr != 'N/A') {
           // Intentar extraer coordenadas del string
           double? lat;
           double? lng;
@@ -536,6 +536,9 @@ class AMCLclsFirestoreService {
           ));
         }
       }
+      
+      // Ordenar por fecha en memoria (más recientes primero)
+      locations.sort((a, b) => b.completedAt.compareTo(a.completedAt));
       
       return locations;
     } catch (e) {

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/amcl_cls_dashboard_metrics.dart';
 import '../services/amcl_cls_firestore_service.dart';
 
@@ -13,13 +13,8 @@ class AMCLclsResponsesMapScreen extends StatefulWidget {
 
 class _AMCLclsResponsesMapScreenState extends State<AMCLclsResponsesMapScreen> {
   final _firestoreService = AMCLclsFirestoreService();
-  GoogleMapController? _mapController;
-  Set<Marker> _markers = {};
   bool _isLoading = true;
   List<AMCLclsLocationData> _locations = [];
-  
-  // Ubicación por defecto (La Paz, Bolivia)
-  static const LatLng _defaultLocation = LatLng(-16.5000, -68.1500);
 
   @override
   void initState() {
@@ -33,33 +28,10 @@ class _AMCLclsResponsesMapScreenState extends State<AMCLclsResponsesMapScreen> {
     try {
       List<AMCLclsLocationData> locations = await _firestoreService.getResponseLocations();
       
-      Set<Marker> markers = {};
-      for (var location in locations) {
-        if (location.latitude != null && location.longitude != null) {
-          markers.add(
-            Marker(
-              markerId: MarkerId('${location.latitude}_${location.longitude}_${location.completedAt.millisecondsSinceEpoch}'),
-              position: LatLng(location.latitude!, location.longitude!),
-              infoWindow: InfoWindow(
-                title: location.surveyTitle,
-                snippet: '${location.respondentName} - ${DateFormat('dd/MM/yyyy HH:mm').format(location.completedAt)}',
-              ),
-              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
-            ),
-          );
-        }
-      }
-      
       setState(() {
         _locations = locations;
-        _markers = markers;
         _isLoading = false;
       });
-      
-      // Ajustar cámara para mostrar todos los marcadores
-      if (markers.isNotEmpty && _mapController != null) {
-        _fitMarkersInView();
-      }
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
@@ -70,41 +42,35 @@ class _AMCLclsResponsesMapScreenState extends State<AMCLclsResponsesMapScreen> {
     }
   }
 
-  void _fitMarkersInView() {
-    if (_markers.isEmpty || _mapController == null) return;
-    
-    double minLat = _markers.first.position.latitude;
-    double maxLat = _markers.first.position.latitude;
-    double minLng = _markers.first.position.longitude;
-    double maxLng = _markers.first.position.longitude;
-    
-    for (var marker in _markers) {
-      if (marker.position.latitude < minLat) minLat = marker.position.latitude;
-      if (marker.position.latitude > maxLat) maxLat = marker.position.latitude;
-      if (marker.position.longitude < minLng) minLng = marker.position.longitude;
-      if (marker.position.longitude > maxLng) maxLng = marker.position.longitude;
+  Future<void> _openInGoogleMaps(double lat, double lng, String title) async {
+    final urlString = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+    final url = Uri.parse(urlString);
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        throw 'No se pudo abrir Google Maps';
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir Google Maps')),
+        );
+      }
     }
-    
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(
-        LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        ),
-        50, // padding
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    int locationsWithCoords = _locations.where((l) => l.latitude != null && l.longitude != null).length;
+    
     return Scaffold(
       appBar: AppBar(
         title: const Row(
           children: [
             Icon(Icons.map, size: 24),
             SizedBox(width: 8),
-            Text('Mapa de Respuestas'),
+            Text('Ubicaciones de Respuestas'),
           ],
         ),
         backgroundColor: Colors.purple.shade700,
@@ -116,196 +82,211 @@ class _AMCLclsResponsesMapScreenState extends State<AMCLclsResponsesMapScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          // Mapa
-          GoogleMap(
-            initialCameraPosition: const CameraPosition(
-              target: _defaultLocation,
-              zoom: 12,
-            ),
-            markers: _markers,
-            onMapCreated: (controller) {
-              _mapController = controller;
-              if (_markers.isNotEmpty) {
-                Future.delayed(const Duration(milliseconds: 500), _fitMarkersInView);
-              }
-            },
-            myLocationButtonEnabled: true,
-            myLocationEnabled: true,
-            mapType: MapType.normal,
-            zoomControlsEnabled: true,
-          ),
-          
-          // Indicador de carga
-          if (_isLoading)
-            Container(
-              color: Colors.black.withOpacity(0.3),
-              child: const Center(
-                child: Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Cargando ubicaciones...'),
-                      ],
-                    ),
-                  ),
-                ),
+      body: _isLoading
+          ? const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Cargando ubicaciones...'),
+                ],
               ),
-            ),
-          
-          // Panel de información
-          Positioned(
-            top: 16,
-            left: 16,
-            right: 16,
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Icon(Icons.location_on, color: Colors.purple.shade700, size: 20),
-                    const SizedBox(width: 8),
-                    Text(
-                      '${_markers.length} ubicación${_markers.length != 1 ? 'es' : ''} encontrada${_markers.length != 1 ? 's' : ''}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
+            )
+          : _locations.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.location_off, size: 64, color: Colors.grey.shade400),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No hay respuestas con ubicación',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          
-          // Lista de ubicaciones (colapsable)
-          if (_locations.isNotEmpty)
-            DraggableScrollableSheet(
-              initialChildSize: 0.15,
-              minChildSize: 0.15,
-              maxChildSize: 0.6,
-              builder: (context, scrollController) {
-                return Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 10,
-                        offset: const Offset(0, -2),
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: _loadLocations,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Recargar'),
                       ),
                     ],
                   ),
-                  child: Column(
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
+                )
+              : Column(
+                  children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      color: Colors.purple.shade50,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _buildStatCard(
+                            icon: Icons.location_on,
+                            label: 'Con GPS',
+                            value: '$locationsWithCoords',
+                            color: Colors.green,
+                          ),
+                          _buildStatCard(
+                            icon: Icons.list,
+                            label: 'Total',
+                            value: '${_locations.length}',
+                            color: Colors.purple,
+                          ),
+                        ],
                       ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        child: Row(
-                          children: [
-                            Icon(Icons.list, color: Colors.purple.shade700, size: 20),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Listado de Ubicaciones',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(height: 1),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: scrollController,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          itemCount: _locations.length,
-                          itemBuilder: (context, index) {
-                            AMCLclsLocationData location = _locations[index];
-                            bool hasCoords = location.latitude != null && location.longitude != null;
-                            
-                            return ListTile(
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: _locations.length,
+                        itemBuilder: (context, index) {
+                          AMCLclsLocationData location = _locations[index];
+                          bool hasCoords = location.latitude != null && location.longitude != null;
+                          
+                          return Card(
+                            margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            child: ListTile(
                               leading: CircleAvatar(
                                 backgroundColor: hasCoords ? Colors.purple.shade100 : Colors.grey.shade200,
                                 child: Icon(
                                   hasCoords ? Icons.location_on : Icons.location_off,
                                   color: hasCoords ? Colors.purple.shade700 : Colors.grey,
-                                  size: 20,
+                                  size: 24,
                                 ),
                               ),
                               title: Text(
                                 location.respondentName,
-                                style: const TextStyle(fontWeight: FontWeight.w600),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
                               ),
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(location.surveyTitle),
-                                  Text(
-                                    DateFormat('dd/MM/yyyy HH:mm').format(location.completedAt),
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                  if (location.address != null)
-                                    Text(
-                                      location.address!,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.blue.shade700,
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.assignment, size: 14, color: Colors.grey.shade600),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          location.surveyTitle,
+                                          style: const TextStyle(fontSize: 14),
+                                        ),
                                       ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                    ],
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.access_time, size: 14, color: Colors.grey.shade600),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        DateFormat('dd/MM/yyyy HH:mm').format(location.completedAt),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  if (hasCoords) ...[
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        Icon(Icons.my_location, size: 14, color: Colors.blue.shade600),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            '${location.latitude!.toStringAsFixed(6)}, ${location.longitude!.toStringAsFixed(6)}',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.blue.shade700,
+                                              fontFamily: 'monospace',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
+                                  ],
+                                  if (location.address != null && location.address!.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        Icon(Icons.place, size: 14, color: Colors.orange.shade600),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            location.address!,
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ],
                               ),
                               trailing: hasCoords
                                   ? IconButton(
-                                      icon: const Icon(Icons.my_location),
-                                      onPressed: () {
-                                        _mapController?.animateCamera(
-                                          CameraUpdate.newLatLngZoom(
-                                            LatLng(location.latitude!, location.longitude!),
-                                            15,
-                                          ),
-                                        );
-                                      },
+                                      icon: const Icon(Icons.map),
+                                      color: Colors.purple.shade700,
+                                      tooltip: 'Ver en Google Maps',
+                                      onPressed: () => _openInGoogleMaps(
+                                        location.latitude!,
+                                        location.longitude!,
+                                        location.surveyTitle,
+                                      ),
                                     )
                                   : null,
                               isThreeLine: true,
-                            );
-                          },
-                        ),
+                            ),
+                          );
+                        },
                       ),
-                    ],
-                  ),
-                );
-              },
-            ),
-        ],
-      ),
+                    ),
+                  ],
+                ),
     );
   }
 
-  @override
-  void dispose() {
-    _mapController?.dispose();
-    super.dispose();
+  Widget _buildStatCard({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 32),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey.shade700,
+          ),
+        ),
+      ],
+    );
   }
 }
