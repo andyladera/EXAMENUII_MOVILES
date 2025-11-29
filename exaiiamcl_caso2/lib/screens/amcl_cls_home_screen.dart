@@ -7,7 +7,8 @@ import '../models/amcl_cls_survey.dart';
 import 'amcl_cls_create_survey_screen.dart';
 import 'amcl_cls_apply_survey_screen.dart';
 import 'amcl_cls_survey_responses_screen.dart';
-import 'amcl_cls_survey_responses_screen.dart';
+import 'amcl_cls_assign_survey_screen.dart';
+import 'amcl_cls_survey_report_screen.dart';
 
 class AMCLclsHomeScreen extends StatefulWidget {
   const AMCLclsHomeScreen({super.key});
@@ -18,7 +19,6 @@ class AMCLclsHomeScreen extends StatefulWidget {
 
 class _AMCLclsHomeScreenState extends State<AMCLclsHomeScreen> {
   final _authService = AMCLclsAuthService();
-  final _firestoreService = AMCLclsFirestoreService();
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +216,7 @@ class _AdminView extends StatelessWidget {
           itemBuilder: (context, index) {
             final survey = surveys[index];
             return StreamBuilder<int>(
-              stream: _firestoreService.getSurveyResponses(survey.id).map((responses) => responses.length),
+              stream: firestoreService.getSurveyResponses(survey.id).map((responses) => responses.length),
               builder: (context, responseSnapshot) {
                 final responseCount = responseSnapshot.data ?? 0;
                 
@@ -280,6 +280,29 @@ class _AdminView extends StatelessWidget {
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.person_add, size: 12, color: Colors.orange.shade700),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${survey.assignedTo.length} asignado${survey.assignedTo.length != 1 ? 's' : ''}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.orange.shade700,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                             if (responseCount > 0) ...[
                               const SizedBox(width: 8),
                               Container(
@@ -318,6 +341,20 @@ class _AdminView extends StatelessWidget {
                           builder: (context) => AMCLSurveyResponsesScreen(survey: survey),
                         ),
                       );
+                    } else if (value == 'report') {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AMCLclsSurveyReportScreen(survey: survey),
+                        ),
+                      );
+                    } else if (value == 'assign') {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => AMCLclsAssignSurveyScreen(survey: survey),
+                        ),
+                      );
                     } else if (value == 'edit') {
                       final result = await Navigator.push(
                         context,
@@ -337,9 +374,29 @@ class _AdminView extends StatelessWidget {
                       value: 'responses',
                       child: Row(
                         children: [
-                          Icon(Icons.bar_chart, size: 20),
+                          Icon(Icons.format_list_bulleted, size: 20),
                           SizedBox(width: 8),
                           Text('Ver Respuestas'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'report',
+                      child: Row(
+                        children: [
+                          Icon(Icons.bar_chart, size: 20, color: Colors.green),
+                          SizedBox(width: 8),
+                          Text('Ver Reporte'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'assign',
+                      child: Row(
+                        children: [
+                          Icon(Icons.person_add, size: 20),
+                          SizedBox(width: 8),
+                          Text('Asignar Encuestadores'),
                         ],
                       ),
                     ),
@@ -432,7 +489,7 @@ class _SurveyorView extends StatelessWidget {
     final firestoreService = AMCLclsFirestoreService();
 
     return StreamBuilder<List<AMCLclsSurvey>>(
-      stream: firestoreService.getActiveSurveys(),
+      stream: firestoreService.getAssignedSurveys(userId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());
@@ -446,7 +503,7 @@ class _SurveyorView extends StatelessWidget {
                 Icon(Icons.assignment_outlined, size: 100, color: Colors.grey.shade400),
                 const SizedBox(height: 16),
                 Text(
-                  'No hay encuestas disponibles',
+                  'No tienes encuestas asignadas',
                   style: TextStyle(
                     fontSize: 20,
                     color: Colors.grey.shade600,
@@ -455,7 +512,7 @@ class _SurveyorView extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Espera a que un administrador cree encuestas',
+                  'Espera a que un administrador te asigne encuestas',
                   style: TextStyle(
                     fontSize: 16,
                     color: Colors.grey.shade500,

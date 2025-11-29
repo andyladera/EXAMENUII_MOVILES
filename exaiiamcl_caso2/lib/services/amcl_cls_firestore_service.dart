@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/amcl_cls_survey.dart';
 import '../models/amcl_cls_question.dart';
 import '../models/amcl_cls_response.dart';
+import '../models/amcl_cls_survey_stats.dart';
+import '../models/amcl_cls_user.dart';
 
 class AMCLclsFirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -37,6 +39,42 @@ class AMCLclsFirestoreService {
         .map((snapshot) => snapshot.docs
             .map((doc) => AMCLclsSurvey.fromFirestore(doc))
             .toList());
+  }
+
+  // Obtener encuestas asignadas a un usuario
+  Stream<List<AMCLclsSurvey>> getAssignedSurveys(String userId) {
+    return _firestore
+        .collection('amcl_caso2_surveys')
+        .where('isActive', isEqualTo: true)
+        .where('assignedTo', arrayContains: userId)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => AMCLclsSurvey.fromFirestore(doc))
+            .toList());
+  }
+
+  // Asignar usuarios a una encuesta
+  Future<void> assignUsersToSurvey(String surveyId, List<String> userIds) async {
+    await updateSurvey(surveyId, {'assignedTo': userIds});
+  }
+
+  // Obtener todos los usuarios encuestadores
+  Future<List<Map<String, dynamic>>> getSurveyors() async {
+    QuerySnapshot snapshot = await _firestore
+        .collection('amcl_caso2_users')
+        .where('role', isEqualTo: 'surveyor')
+        .orderBy('name')
+        .get();
+    
+    return snapshot.docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      return {
+        'id': doc.id,
+        'name': data['name'] ?? '',
+        'email': data['email'] ?? '',
+      };
+    }).toList();
   }
 
   // Obtener encuesta por ID
@@ -180,5 +218,138 @@ class AMCLclsFirestoreService {
   // Eliminar respuesta
   Future<void> deleteResponse(String responseId) async {
     await _firestore.collection('amcl_caso2_responses').doc(responseId).delete();
+  }
+
+  // ==================== REPORTES Y ESTADÍSTICAS ====================
+  
+  // Obtener estadísticas completas de una encuesta
+  Future<AMCLclsSurveyStats> getSurveyStatistics(String surveyId) async {
+    // Obtener todas las respuestas
+    QuerySnapshot responsesSnapshot = await _firestore
+        .collection('amcl_caso2_responses')
+        .where('surveyId', isEqualTo: surveyId)
+        .orderBy('completedAt')
+        .get();
+    
+    List<AMCLclsResponse> responses = responsesSnapshot.docs
+        .map((doc) => AMCLclsResponse.fromFirestore(doc))
+        .toList();
+    
+    // Obtener todas las preguntas
+    QuerySnapshot questionsSnapshot = await _firestore
+        .collection('amcl_caso2_questions')
+        .where('surveyId', isEqualTo: surveyId)
+        .orderBy('order')
+        .get();
+    
+    List<AMCLclsQuestion> questions = questionsSnapshot.docs
+        .map((doc) => AMCLclsQuestion.fromFirestore(doc))
+        .toList();
+    
+    // Calcular estadísticas por pregunta
+    Map<String, dynamic> questionStats = {};
+    for (var question in questions) {
+      questionStats[question.id!] = _calculateQuestionStats(question, responses);
+    }
+    
+    // Calcular respuestas por fecha
+    List<Map<String, dynamic>> responsesByDate = _groupResponsesByDate(responses);
+    
+    // Calcular tiempo promedio de completación (simulado por ahora)
+    double avgTime = responses.isNotEmpty ? 5.0 : 0.0;
+    
+    return AMCLclsSurveyStats(
+      totalResponses: responses.length,
+      totalQuestions: questions.length,
+      questionStats: questionStats,
+      responsesByDate: responsesByDate,
+      averageCompletionTime: avgTime,
+    );
+  }
+  
+  // Calcular estadísticas de una pregunta específica
+  AMCLclsQuestionStats _calculateQuestionStats(
+    AMCLclsQuestion question,
+    List<AMCLclsResponse> responses,
+  ) {
+    int totalAnswers = 0;
+    Map<String, int>? optionCounts;
+    double? averageRating;
+    List<String>? openEndedAnswers;
+    
+    // Obtener todas las respuestas a esta pregunta
+    List<dynamic> answers = [];
+    for (var response in responses) {
+      if (response.answers.containsKey(question.id)) {
+        answers.add(response.answers[question.id]);
+        totalAnswers++;
+      }
+    }
+    
+    // Procesar según el tipo de pregunta
+    switch (question.type) {
+      case AMCLQuestionType.multipleChoice:
+        optionCounts = {};
+        for (var option in question.options) {
+          optionCounts[option] = 0;
+        }
+        for (var answer in answers) {
+          if (answer is String && optionCounts.containsKey(answer)) {
+            optionCounts[answer] = optionCounts[answer]! + 1;
+          }
+        }
+        break;
+        
+      case AMCLQuestionType.rating:
+        if (answers.isNotEmpty) {
+          double sum = 0;
+          for (var answer in answers) {
+            if (answer is int) {
+              sum += answer;
+            }
+          }
+          averageRating = sum / answers.length;
+        }
+        break;
+        
+      case AMCLQuestionType.openEnded:
+        openEndedAnswers = answers
+            .where((a) => a is String && a.isNotEmpty)
+            .map((a) => a.toString())
+            .toList();
+        break;
+    }
+    
+    return AMCLclsQuestionStats(
+      questionId: question.id!,
+      questionText: question.question,
+      questionType: question.type.name,
+      totalAnswers: totalAnswers,
+      optionCounts: optionCounts,
+      averageRating: averageRating,
+      openEndedAnswers: openEndedAnswers,
+    );
+  }
+  
+  // Agrupar respuestas por fecha
+  List<Map<String, dynamic>> _groupResponsesByDate(List<AMCLclsResponse> responses) {
+    Map<String, int> dateGroups = {};
+    
+    for (var response in responses) {
+      String dateKey = _formatDate(response.completedAt);
+      dateGroups[dateKey] = (dateGroups[dateKey] ?? 0) + 1;
+    }
+    
+    List<Map<String, dynamic>> result = [];
+    dateGroups.forEach((date, count) {
+      result.add({'date': date, 'count': count});
+    });
+    
+    return result;
+  }
+  
+  // Formatear fecha a string
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
 }

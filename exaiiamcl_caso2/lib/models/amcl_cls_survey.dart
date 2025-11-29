@@ -8,6 +8,7 @@ class AMCLclsSurvey {
   final DateTime createdAt;
   final DateTime? updatedAt;
   final bool isActive;
+  final List<String> assignedTo; // Lista de userIds asignados
 
   AMCLclsSurvey({
     required this.id,
@@ -17,6 +18,7 @@ class AMCLclsSurvey {
     required this.createdAt,
     this.updatedAt,
     this.isActive = true,
+    this.assignedTo = const [],
   });
 
   // Convertir desde Firestore
@@ -32,6 +34,7 @@ class AMCLclsSurvey {
           ? (data['updatedAt'] as Timestamp).toDate()
           : null,
       isActive: data['isActive'] ?? true,
+      assignedTo: List<String>.from(data['assignedTo'] ?? []),
     );
   }
 
@@ -44,6 +47,7 @@ class AMCLclsSurvey {
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
       'isActive': isActive,
+      'assignedTo': assignedTo,
     };
   }
 
@@ -56,6 +60,7 @@ class AMCLclsSurvey {
     DateTime? createdAt,
     DateTime? updatedAt,
     bool? isActive,
+    List<String>? assignedTo,
   }) {
     return AMCLclsSurvey(
       id: id ?? this.id,
@@ -65,6 +70,7 @@ class AMCLclsSurvey {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       isActive: isActive ?? this.isActive,
+      assignedTo: assignedTo ?? this.assignedTo,
     );
   }
 }

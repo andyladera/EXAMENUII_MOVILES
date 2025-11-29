@@ -129,6 +129,7 @@ class _AMCLCreateSurveyScreenState extends State<AMCLCreateSurveyScreen> {
           createdBy: user.uid,
           createdAt: DateTime.now(),
           isActive: _isActive,
+          assignedTo: [],
         );
         surveyId = await _firestoreService.createSurvey(survey);
         
