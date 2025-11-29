@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../services/amcl_cls_firestore_service.dart';
 import '../models/amcl_cls_course.dart';
 import 'amcl_cls_create_course_screen.dart';
+import 'amcl_cls_units_screen.dart';
+import 'amcl_cls_materials_screen.dart';
 
 class AMCLclsCourseDetailScreen extends StatelessWidget {
   final String courseId;
@@ -137,10 +139,13 @@ class AMCLclsCourseDetailScreen extends StatelessWidget {
                         title: 'Unidades',
                         subtitle: 'Organiza tus temas de estudio',
                         onTap: () {
-                          // TODO: Navegar a unidades
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Próximamente: Gestión de unidades'),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AMCLclsUnitsScreen(
+                                courseId: course.id,
+                                courseTitle: course.title,
+                              ),
                             ),
                           );
                         },
@@ -151,10 +156,13 @@ class AMCLclsCourseDetailScreen extends StatelessWidget {
                         title: 'Materiales',
                         subtitle: 'PDFs y videos de estudio',
                         onTap: () {
-                          // TODO: Navegar a materiales
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Próximamente: Gestión de materiales'),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AMCLclsMaterialsScreen(
+                                courseId: course.id,
+                                courseTitle: course.title,
+                              ),
                             ),
                           );
                         },
