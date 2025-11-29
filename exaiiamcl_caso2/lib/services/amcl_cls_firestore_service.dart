@@ -4,6 +4,7 @@ import '../models/amcl_cls_question.dart';
 import '../models/amcl_cls_response.dart';
 import '../models/amcl_cls_survey_stats.dart';
 import '../models/amcl_cls_user.dart';
+import '../models/amcl_cls_dashboard_metrics.dart';
 
 class AMCLclsFirestoreService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -351,5 +352,194 @@ class AMCLclsFirestoreService {
   // Formatear fecha a string
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+  
+  // ==================== DASHBOARD METRICS (REAL-TIME) ====================
+  
+  // Stream de métricas del dashboard
+  Stream<AMCLclsDashboardMetrics> getDashboardMetrics() async* {
+    // Combinar múltiples streams
+    await for (var _ in Stream.periodic(const Duration(seconds: 2))) {
+      AMCLclsDashboardMetrics metrics = await _fetchDashboardMetrics();
+      yield metrics;
+    }
+  }
+  
+  // Obtener métricas actuales
+  Future<AMCLclsDashboardMetrics> _fetchDashboardMetrics() async {
+    try {
+      // Total de encuestas
+      QuerySnapshot surveysSnapshot = await _firestore
+          .collection('amcl_caso2_surveys')
+          .get();
+      
+      int totalSurveys = surveysSnapshot.docs.length;
+      int activeSurveys = surveysSnapshot.docs
+          .where((doc) => (doc.data() as Map<String, dynamic>)['isActive'] == true)
+          .length;
+      
+      Map<String, String> surveyTitles = {};
+      for (var doc in surveysSnapshot.docs) {
+        var data = doc.data() as Map<String, dynamic>;
+        surveyTitles[doc.id] = data['title'] ?? '';
+      }
+      
+      // Total de respuestas
+      QuerySnapshot responsesSnapshot = await _firestore
+          .collection('amcl_caso2_responses')
+          .get();
+      
+      int totalResponses = responsesSnapshot.docs.length;
+      
+      // Respuestas por encuesta
+      Map<String, int> responsesBySurvey = {};
+      for (var doc in responsesSnapshot.docs) {
+        var data = doc.data() as Map<String, dynamic>;
+        String surveyId = data['surveyId'] ?? '';
+        responsesBySurvey[surveyId] = (responsesBySurvey[surveyId] ?? 0) + 1;
+      }
+      
+      // Total de usuarios
+      QuerySnapshot usersSnapshot = await _firestore
+          .collection('amcl_caso2_users')
+          .get();
+      
+      int totalUsers = usersSnapshot.docs.length;
+      int surveyors = usersSnapshot.docs
+          .where((doc) => (doc.data() as Map<String, dynamic>)['role'] == 'surveyor')
+          .length;
+      
+      // Respuestas recientes (últimas 5)
+      QuerySnapshot recentResponsesSnapshot = await _firestore
+          .collection('amcl_caso2_responses')
+          .orderBy('completedAt', descending: true)
+          .limit(5)
+          .get();
+      
+      List<Map<String, dynamic>> recentResponses = recentResponsesSnapshot.docs.map((doc) {
+        var data = doc.data() as Map<String, dynamic>;
+        return {
+          'surveyId': data['surveyId'],
+          'respondentName': data['respondentName'],
+          'completedAt': (data['completedAt'] as Timestamp).toDate(),
+        };
+      }).toList();
+      
+      // Respuestas por día (últimos 7 días)
+      DateTime now = DateTime.now();
+      DateTime weekAgo = now.subtract(const Duration(days: 7));
+      
+      QuerySnapshot timeRangeSnapshot = await _firestore
+          .collection('amcl_caso2_responses')
+          .where('completedAt', isGreaterThan: weekAgo)
+          .get();
+      
+      Map<String, int> responsesPerDay = {};
+      for (int i = 0; i < 7; i++) {
+        DateTime day = now.subtract(Duration(days: i));
+        String dateKey = _formatDate(day);
+        responsesPerDay[dateKey] = 0;
+      }
+      
+      for (var doc in timeRangeSnapshot.docs) {
+        var data = doc.data() as Map<String, dynamic>;
+        DateTime completedAt = (data['completedAt'] as Timestamp).toDate();
+        String dateKey = _formatDate(completedAt);
+        if (responsesPerDay.containsKey(dateKey)) {
+          responsesPerDay[dateKey] = responsesPerDay[dateKey]! + 1;
+        }
+      }
+      
+      List<Map<String, dynamic>> responsesOverTime = responsesPerDay.entries.map((e) {
+        return {'date': e.key, 'count': e.value};
+      }).toList();
+      
+      return AMCLclsDashboardMetrics(
+        totalSurveys: totalSurveys,
+        activeSurveys: activeSurveys,
+        totalResponses: totalResponses,
+        totalUsers: totalUsers,
+        surveyors: surveyors,
+        responsesBySurvey: responsesBySurvey,
+        surveyTitles: surveyTitles,
+        recentResponses: recentResponses,
+        responsesOverTime: responsesOverTime,
+      );
+    } catch (e) {
+      return AMCLclsDashboardMetrics(
+        totalSurveys: 0,
+        activeSurveys: 0,
+        totalResponses: 0,
+        totalUsers: 0,
+        surveyors: 0,
+        responsesBySurvey: {},
+        surveyTitles: {},
+        recentResponses: [],
+        responsesOverTime: [],
+      );
+    }
+  }
+  
+  // Obtener ubicaciones de respuestas para mapa
+  Future<List<AMCLclsLocationData>> getResponseLocations() async {
+    try {
+      QuerySnapshot responsesSnapshot = await _firestore
+          .collection('amcl_caso2_responses')
+          .where('location', isNull: false)
+          .orderBy('completedAt', descending: true)
+          .limit(100)
+          .get();
+      
+      List<AMCLclsLocationData> locations = [];
+      
+      for (var doc in responsesSnapshot.docs) {
+        var data = doc.data() as Map<String, dynamic>;
+        String? locationStr = data['location'];
+        
+        if (locationStr != null && locationStr.isNotEmpty) {
+          // Intentar extraer coordenadas del string
+          double? lat;
+          double? lng;
+          
+          // Si el formato es "lat, lng" o contiene coordenadas
+          RegExp coordsPattern = RegExp(r'(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)');
+          var match = coordsPattern.firstMatch(locationStr);
+          
+          if (match != null) {
+            lat = double.tryParse(match.group(1) ?? '');
+            lng = double.tryParse(match.group(2) ?? '');
+          }
+          
+          // Obtener título de la encuesta
+          String surveyId = data['surveyId'] ?? '';
+          String surveyTitle = 'Encuesta';
+          
+          try {
+            DocumentSnapshot surveyDoc = await _firestore
+                .collection('amcl_caso2_surveys')
+                .doc(surveyId)
+                .get();
+            if (surveyDoc.exists) {
+              surveyTitle = (surveyDoc.data() as Map<String, dynamic>)['title'] ?? 'Encuesta';
+            }
+          } catch (e) {
+            // Ignorar error al obtener título
+          }
+          
+          locations.add(AMCLclsLocationData(
+            surveyTitle: surveyTitle,
+            respondentName: data['respondentName'] ?? '',
+            latitude: lat,
+            longitude: lng,
+            address: locationStr,
+            completedAt: (data['completedAt'] as Timestamp).toDate(),
+          ));
+        }
+      }
+      
+      return locations;
+    } catch (e) {
+      return [];
+    }
   }
 }

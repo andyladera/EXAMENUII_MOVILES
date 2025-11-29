@@ -3,6 +3,8 @@ import '../models/amcl_cls_survey.dart';
 import '../models/amcl_cls_question.dart';
 import '../models/amcl_cls_response.dart';
 import '../services/amcl_cls_firestore_service.dart';
+import '../services/amcl_cls_local_storage_service.dart';
+import '../services/amcl_cls_sync_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -22,6 +24,8 @@ class _AMCLApplySurveyScreenState extends State<AMCLApplySurveyScreen> {
   final _emailController = TextEditingController();
   final _locationController = TextEditingController();
   final _firestoreService = AMCLclsFirestoreService();
+  final _localStorage = AMCLclsLocalStorageService();
+  final _syncService = AMCLclsSyncService();
   
   List<AMCLclsQuestion> _questions = [];
   final Map<String, dynamic> _answers = {};
@@ -29,12 +33,21 @@ class _AMCLApplySurveyScreenState extends State<AMCLApplySurveyScreen> {
   bool _isSubmitting = false;
   String _currentLocation = 'Obteniendo ubicación...';
   bool _locationError = false;
+  bool _hasInternetConnection = true;
 
   @override
   void initState() {
     super.initState();
     _loadQuestions();
     _getCurrentLocation();
+    _checkConnection();
+  }
+  
+  Future<void> _checkConnection() async {
+    bool hasConnection = await _syncService.hasInternetConnection();
+    setState(() {
+      _hasInternetConnection = hasConnection;
+    });
   }
 
   Future<void> _loadQuestions() async {
@@ -173,7 +186,7 @@ class _AMCLApplySurveyScreenState extends State<AMCLApplySurveyScreen> {
       if (user == null) throw Exception('Usuario no autenticado');
 
       final response = AMCLclsResponse(
-        id: '',
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
         surveyId: widget.survey.id,
         userId: user.uid,
         respondentName: _nameController.text.trim(),
@@ -183,15 +196,92 @@ class _AMCLApplySurveyScreenState extends State<AMCLApplySurveyScreen> {
         location: _locationController.text.trim().isEmpty ? null : _locationController.text.trim(),
       );
 
-      await _firestoreService.createResponse(response);
-
-      if (mounted) {
-        Navigator.pop(context, true);
+      // Verificar conexión a Internet
+      bool hasConnection = await _syncService.hasInternetConnection();
+      
+      if (hasConnection) {
+        // Hay conexión, enviar directamente a Firestore
+        try {
+          await _firestoreService.createResponse(response);
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.check_circle, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text('Encuesta enviada exitosamente'),
+                  ],
+                ),
+                backgroundColor: Colors.green,
+              ),
+            );
+            Navigator.pop(context, true);
+          }
+        } catch (e) {
+          // Error al enviar, guardar localmente
+          await _localStorage.savePendingResponse(response);
+          
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Row(
+                  children: [
+                    Icon(Icons.save, color: Colors.white),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Error al enviar. Guardado localmente para sincronizar después'),
+                    ),
+                  ],
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 4),
+              ),
+            );
+            Navigator.pop(context, true);
+          }
+        }
+      } else {
+        // Sin conexión, guardar localmente
+        await _localStorage.savePendingResponse(response);
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.cloud_off, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Sin conexión. Respuesta guardada localmente (${_localStorage.getPendingCount()} pendiente${_localStorage.getPendingCount() != 1 ? 's' : ''})',
+                    ),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.orange.shade700,
+              duration: const Duration(seconds: 4),
+              action: SnackBarAction(
+                label: 'Ver',
+                textColor: Colors.white,
+                onPressed: () {
+                  // Mostrar dialog con respuestas pendientes
+                  _showPendingResponsesDialog();
+                },
+              ),
+            ),
+          );
+          Navigator.pop(context, true);
+        }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al enviar encuesta: $e')),
+          SnackBar(
+            content: Text('Error inesperado: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     } finally {
@@ -200,6 +290,32 @@ class _AMCLApplySurveyScreenState extends State<AMCLApplySurveyScreen> {
       }
     }
   }
+  
+  void _showPendingResponsesDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.pending_actions, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Respuestas Pendientes'),
+          ],
+        ),
+        content: Text(
+          'Tienes ${_localStorage.getPendingCount()} respuesta(s) guardada(s) localmente.\n\n'
+          'Se sincronizarán automáticamente cuando recuperes la conexión a Internet, '
+          'o puedes sincronizar manualmente desde el menú principal.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -207,11 +323,62 @@ class _AMCLApplySurveyScreenState extends State<AMCLApplySurveyScreen> {
       appBar: AppBar(
         title: Text(widget.survey.title),
         backgroundColor: Colors.blue.shade700,
+        actions: [
+          // Indicador de conexión
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Center(
+              child: Row(
+                children: [
+                  Icon(
+                    _hasInternetConnection ? Icons.cloud_done : Icons.cloud_off,
+                    size: 20,
+                    color: _hasInternetConnection ? Colors.white : Colors.orange,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _hasInternetConnection ? 'Online' : 'Offline',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _hasInternetConnection ? Colors.white : Colors.orange,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Form(
-              key: _formKey,
+          : Column(
+              children: [
+                // Banner de estado offline si no hay conexión
+                if (!_hasInternetConnection)
+                  Container(
+                    width: double.infinity,
+                    color: Colors.orange.shade100,
+                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.orange.shade800, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Sin conexión. Las respuestas se guardarán localmente.',
+                            style: TextStyle(
+                              color: Colors.orange.shade900,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: Form(
+                    key: _formKey,
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
@@ -341,6 +508,9 @@ class _AMCLApplySurveyScreenState extends State<AMCLApplySurveyScreen> {
                   ),
                 ],
               ),
+            ),
+                  ),
+              ],
             ),
     );
   }

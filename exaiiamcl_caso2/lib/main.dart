@@ -6,12 +6,19 @@ import 'screens/amcl_cls_login_screen.dart';
 import 'screens/amcl_cls_register_screen.dart';
 import 'screens/amcl_cls_home_screen.dart';
 import 'screens/amcl_cls_create_survey_screen.dart';
+import 'services/amcl_cls_local_storage_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Inicializar Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  
+  // Inicializar Hive para almacenamiento local
+  await AMCLclsLocalStorageService.init();
+  
   runApp(const MainApp());
 }
 

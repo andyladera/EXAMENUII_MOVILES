@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/amcl_cls_auth_service.dart';
 import '../services/amcl_cls_firestore_service.dart';
+import '../services/amcl_cls_local_storage_service.dart';
 import '../models/amcl_cls_user.dart';
 import '../models/amcl_cls_survey.dart';
 import 'amcl_cls_create_survey_screen.dart';
@@ -9,6 +10,8 @@ import 'amcl_cls_apply_survey_screen.dart';
 import 'amcl_cls_survey_responses_screen.dart';
 import 'amcl_cls_assign_survey_screen.dart';
 import 'amcl_cls_survey_report_screen.dart';
+import 'amcl_cls_pending_responses_screen.dart';
+import 'amcl_cls_dashboard_screen.dart';
 
 class AMCLclsHomeScreen extends StatefulWidget {
   const AMCLclsHomeScreen({super.key});
@@ -52,6 +55,72 @@ class _AMCLclsHomeScreenState extends State<AMCLclsHomeScreen> {
             backgroundColor: user.isAdmin ? Colors.purple.shade700 : Colors.blue.shade700,
             foregroundColor: Colors.white,
             actions: [
+              // Dashboard (solo admin)
+              if (user.isAdmin) ...[
+                IconButton(
+                  icon: const Icon(Icons.dashboard),
+                  tooltip: 'Dashboard',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => AMCLclsDashboardScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+              // Badge de respuestas pendientes (solo encuestadores)
+              if (!user.isAdmin) ...[
+                StreamBuilder<int>(
+                  stream: Stream.periodic(const Duration(seconds: 1), (_) {
+                    return AMCLclsLocalStorageService().getPendingCount();
+                  }),
+                  builder: (context, snapshot) {
+                    int pendingCount = snapshot.data ?? 0;
+                    return Stack(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.pending_actions),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const AMCLclsPendingResponsesScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        if (pendingCount > 0)
+                          Positioned(
+                            right: 8,
+                            top: 8,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.orange,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              constraints: const BoxConstraints(
+                                minWidth: 18,
+                                minHeight: 18,
+                              ),
+                              child: Text(
+                                '$pendingCount',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+              ],
               IconButton(
                 icon: const Icon(Icons.person),
                 onPressed: () {
