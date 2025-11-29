@@ -7,6 +7,7 @@ import 'screens/amcl_cls_register_screen.dart';
 import 'screens/amcl_cls_verify_email_screen.dart';
 import 'screens/amcl_cls_home_screen.dart';
 import 'screens/amcl_cls_create_course_screen.dart';
+import 'screens/amcl_cls_course_detail_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,15 @@ class MainApp extends StatelessWidget {
         useMaterial3: true,
       ),
       initialRoute: '/welcome',
+      onGenerateRoute: (settings) {
+        if (settings.name == '/course-detail') {
+          final courseId = settings.arguments as String;
+          return MaterialPageRoute(
+            builder: (context) => AMCLclsCourseDetailScreen(courseId: courseId),
+          );
+        }
+        return null;
+      },
       routes: {
         '/welcome': (context) => const AMCLclsWelcomeScreen(),
         '/login': (context) => const AMCLclsLoginScreen(),
