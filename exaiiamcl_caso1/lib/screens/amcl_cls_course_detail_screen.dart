@@ -5,6 +5,7 @@ import 'amcl_cls_create_course_screen.dart';
 import 'amcl_cls_units_screen.dart';
 import 'amcl_cls_materials_screen.dart';
 import 'amcl_cls_questions_screen.dart';
+import 'amcl_cls_evaluations_screen.dart';
 
 class AMCLclsCourseDetailScreen extends StatelessWidget {
   final String courseId;
@@ -191,10 +192,13 @@ class AMCLclsCourseDetailScreen extends StatelessWidget {
                         title: 'Evaluaciones',
                         subtitle: 'Rendir y ver evaluaciones',
                         onTap: () {
-                          // TODO: Navegar a evaluaciones
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Próximamente: Módulo de evaluaciones'),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AMCLclsEvaluationsScreen(
+                                courseId: course.id,
+                                courseTitle: course.title,
+                              ),
                             ),
                           );
                         },

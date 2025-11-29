@@ -91,6 +91,24 @@ class AMCLclsFirestoreService {
             .toList());
   }
 
+  // Alias para mantener compatibilidad
+  Stream<List<AMCLclsUnit>> getUnitsStream(String courseId) {
+    return getCourseUnits(courseId);
+  }
+
+  // Obtener unidad por ID
+  Future<AMCLclsUnit?> getUnitById(String courseId, String unitId) async {
+    DocumentSnapshot doc = await _firestore
+        .collection('amcl_caso1_units')
+        .doc(unitId)
+        .get();
+    
+    if (doc.exists) {
+      return AMCLclsUnit.fromFirestore(doc);
+    }
+    return null;
+  }
+
   // Actualizar unidad
   Future<void> updateUnit(String unitId, Map<String, dynamic> updates) async {
     await _firestore
@@ -173,6 +191,11 @@ class AMCLclsFirestoreService {
             .toList());
   }
 
+  // Alias para compatibilidad
+  Stream<List<AMCLclsQuestion>> getQuestionsByUnit(String courseId, String unitId) {
+    return getUnitQuestions(unitId);
+  }
+
   // Obtener preguntas aleatorias para evaluación
   Future<List<AMCLclsQuestion>> getRandomQuestions(String unitId, int count) async {
     QuerySnapshot snapshot = await _firestore
@@ -242,6 +265,11 @@ class AMCLclsFirestoreService {
         .map((snapshot) => snapshot.docs
             .map((doc) => AMCLclsEvaluation.fromFirestore(doc))
             .toList());
+  }
+
+  // Alias para mantener compatibilidad
+  Stream<List<AMCLclsEvaluation>> getEvaluationsByCourse(String courseId, String userId) {
+    return getCourseEvaluations(userId, courseId);
   }
 
   // ==================== RESULTS ====================
