@@ -4,6 +4,7 @@ import '../models/amcl_cls_course.dart';
 import 'amcl_cls_create_course_screen.dart';
 import 'amcl_cls_units_screen.dart';
 import 'amcl_cls_materials_screen.dart';
+import 'amcl_cls_questions_screen.dart';
 
 class AMCLclsCourseDetailScreen extends StatelessWidget {
   final String courseId;
@@ -173,10 +174,13 @@ class AMCLclsCourseDetailScreen extends StatelessWidget {
                         title: 'Preguntas',
                         subtitle: 'Banco de preguntas para evaluaciones',
                         onTap: () {
-                          // TODO: Navegar a preguntas
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Próximamente: Banco de preguntas'),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => AMCLclsQuestionsScreen(
+                                courseId: course.id,
+                                courseTitle: course.title,
+                              ),
                             ),
                           );
                         },
