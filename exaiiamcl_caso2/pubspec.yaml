@@ -1,5 +1,5 @@
 name: exaiiamcl_caso2
-description: "A new Flutter project."
+description: "Sistema de Encuestas - Examen UIII"
 publish_to: 'none'
 version: 0.1.0
 
@@ -9,6 +9,19 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  
+  # Firebase
+  firebase_core: ^3.15.2
+  firebase_auth: ^5.7.0
+  cloud_firestore: ^5.6.12
+  
+  # Location
+  geolocator: ^13.0.2
+  geocoding: ^3.0.0
+  
+  # UI & Utils
+  provider: ^6.1.2
+  intl: ^0.19.0
 
 dev_dependencies:
   flutter_test:
