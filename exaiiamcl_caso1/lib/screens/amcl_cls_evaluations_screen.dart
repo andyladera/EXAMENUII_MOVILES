@@ -240,7 +240,76 @@ class _UnitEvaluationCard extends StatelessWidget {
     );
   }
 
-  void _startEvaluation(BuildContext context, String unitId, List<AMCLclsQuestion> allQuestions) {
+  void _startEvaluation(BuildContext context, String unitId, List<AMCLclsQuestion> allQuestions) async {
+    // Preguntar si desea límite de tiempo
+    final timeLimitMinutes = await showDialog<int?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Configurar Evaluación'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('¿Deseas establecer un límite de tiempo?'),
+            const SizedBox(height: 16),
+            ListTile(
+              title: const Text('Sin límite'),
+              leading: Radio<int?>(
+                value: null,
+                groupValue: null,
+                onChanged: (value) => Navigator.pop(context, null),
+              ),
+              onTap: () => Navigator.pop(context, null),
+            ),
+            ListTile(
+              title: const Text('10 minutos'),
+              leading: Radio<int?>(
+                value: 10,
+                groupValue: null,
+                onChanged: (value) {},
+              ),
+              onTap: () => Navigator.pop(context, 10),
+            ),
+            ListTile(
+              title: const Text('15 minutos'),
+              leading: Radio<int?>(
+                value: 15,
+                groupValue: null,
+                onChanged: (value) {},
+              ),
+              onTap: () => Navigator.pop(context, 15),
+            ),
+            ListTile(
+              title: const Text('20 minutos'),
+              leading: Radio<int?>(
+                value: 20,
+                groupValue: null,
+                onChanged: (value) {},
+              ),
+              onTap: () => Navigator.pop(context, 20),
+            ),
+            ListTile(
+              title: const Text('30 minutos'),
+              leading: Radio<int?>(
+                value: 30,
+                groupValue: null,
+                onChanged: (value) {},
+              ),
+              onTap: () => Navigator.pop(context, 30),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+        ],
+      ),
+    );
+
+    if (!context.mounted) return;
+
     // Seleccionar 10 preguntas aleatorias (o todas si hay menos de 10)
     final random = Random();
     final shuffled = List<AMCLclsQuestion>.from(allQuestions)..shuffle(random);
@@ -254,6 +323,7 @@ class _UnitEvaluationCard extends StatelessWidget {
           unitId: unitId,
           questions: selectedQuestions,
           firestoreService: firestoreService,
+          timeLimitSeconds: timeLimitMinutes != null ? timeLimitMinutes * 60 : null,
         ),
       ),
     );
@@ -265,12 +335,14 @@ class _EvaluationTakingScreen extends StatefulWidget {
   final String unitId;
   final List<AMCLclsQuestion> questions;
   final AMCLclsFirestoreService firestoreService;
+  final int? timeLimitSeconds;
 
   const _EvaluationTakingScreen({
     required this.courseId,
     required this.unitId,
     required this.questions,
     required this.firestoreService,
+    this.timeLimitSeconds,
   });
 
   @override
@@ -295,6 +367,13 @@ class _EvaluationTakingScreenState extends State<_EvaluationTakingScreen> {
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
         _secondsElapsed++;
+        
+        // Si hay límite de tiempo y se alcanzó, finalizar automáticamente
+        if (widget.timeLimitSeconds != null && 
+            _secondsElapsed >= widget.timeLimitSeconds!) {
+          _timer?.cancel();
+          _finishEvaluation(timedOut: true);
+        }
       });
     });
   }
@@ -315,6 +394,12 @@ class _EvaluationTakingScreenState extends State<_EvaluationTakingScreen> {
   Widget build(BuildContext context) {
     final question = widget.questions[_currentQuestionIndex];
     final progress = (_currentQuestionIndex + 1) / widget.questions.length;
+    
+    // Calcular tiempo restante si hay límite
+    final remainingSeconds = widget.timeLimitSeconds != null 
+        ? widget.timeLimitSeconds! - _secondsElapsed 
+        : null;
+    final isTimeRunningOut = remainingSeconds != null && remainingSeconds <= 60;
 
     return WillPopScope(
       onWillPop: () async {
@@ -358,8 +443,14 @@ class _EvaluationTakingScreenState extends State<_EvaluationTakingScreen> {
                     const Icon(Icons.timer),
                     const SizedBox(width: 8),
                     Text(
-                      _formatTime(_secondsElapsed),
-                      style: const TextStyle(fontSize: 16),
+                      widget.timeLimitSeconds != null && remainingSeconds != null
+                          ? _formatTime(remainingSeconds)
+                          : _formatTime(_secondsElapsed),
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: isTimeRunningOut ? Colors.red : Colors.white,
+                        fontWeight: isTimeRunningOut ? FontWeight.bold : FontWeight.normal,
+                      ),
                     ),
                   ],
                 ),
@@ -492,35 +583,38 @@ class _EvaluationTakingScreenState extends State<_EvaluationTakingScreen> {
     );
   }
 
-  void _finishEvaluation() async {
-    // Verificar que todas las preguntas estén respondidas
-    final unanswered = widget.questions
-        .where((q) => !_userAnswers.containsKey(q.id))
-        .length;
+  void _finishEvaluation({bool timedOut = false}) async {
+    // Si se acabó el tiempo, no preguntar
+    if (!timedOut) {
+      // Verificar que todas las preguntas estén respondidas
+      final unanswered = widget.questions
+          .where((q) => !_userAnswers.containsKey(q.id))
+          .length;
 
-    if (unanswered > 0) {
-      final shouldContinue = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Preguntas sin responder'),
-          content: Text(
-            'Tienes $unanswered pregunta${unanswered > 1 ? 's' : ''} sin responder.\n'
-            '¿Deseas finalizar de todos modos?',
+      if (unanswered > 0) {
+        final shouldContinue = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Preguntas sin responder'),
+            content: Text(
+              'Tienes $unanswered pregunta${unanswered > 1 ? 's' : ''} sin responder.\n'
+              '¿Deseas finalizar de todos modos?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Revisar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Finalizar'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Revisar'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Finalizar'),
-            ),
-          ],
-        ),
-      );
+        );
 
-      if (shouldContinue != true) return;
+        if (shouldContinue != true) return;
+      }
     }
 
     // Calcular puntaje
@@ -549,6 +643,7 @@ class _EvaluationTakingScreenState extends State<_EvaluationTakingScreen> {
         startedAt: _startTime,
         completedAt: DateTime.now(),
         timeSpentSeconds: _secondsElapsed,
+        timeLimitSeconds: widget.timeLimitSeconds,
       );
 
       await widget.firestoreService.createEvaluation(evaluation);
@@ -562,6 +657,7 @@ class _EvaluationTakingScreenState extends State<_EvaluationTakingScreen> {
           builder: (context) => _EvaluationResultScreen(
             evaluation: evaluation,
             questions: widget.questions,
+            timedOut: timedOut,
           ),
         ),
       );
@@ -580,10 +676,12 @@ class _EvaluationTakingScreenState extends State<_EvaluationTakingScreen> {
 class _EvaluationResultScreen extends StatelessWidget {
   final AMCLclsEvaluation evaluation;
   final List<AMCLclsQuestion> questions;
+  final bool timedOut;
 
   const _EvaluationResultScreen({
     required this.evaluation,
     required this.questions,
+    this.timedOut = false,
   });
 
   @override
@@ -603,6 +701,33 @@ class _EvaluationResultScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            if (timedOut) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade700, width: 2),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.timer_off, color: Colors.orange.shade700, size: 32),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '¡Se acabó el tiempo!',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.orange.shade900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
             Icon(
               isPassed ? Icons.check_circle : Icons.cancel,
               size: 120,

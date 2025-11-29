@@ -12,6 +12,7 @@ class AMCLclsEvaluation {
   final DateTime startedAt;
   final DateTime? completedAt;
   final int? timeSpentSeconds;
+  final int? timeLimitSeconds; // Límite de tiempo opcional para la evaluación
 
   AMCLclsEvaluation({
     required this.id,
@@ -25,6 +26,7 @@ class AMCLclsEvaluation {
     required this.startedAt,
     this.completedAt,
     this.timeSpentSeconds,
+    this.timeLimitSeconds,
   });
 
   // Convertir desde Firestore
@@ -44,6 +46,7 @@ class AMCLclsEvaluation {
           ? (data['completedAt'] as Timestamp).toDate() 
           : null,
       timeSpentSeconds: data['timeSpentSeconds'],
+      timeLimitSeconds: data['timeLimitSeconds'],
     );
   }
 
@@ -62,6 +65,7 @@ class AMCLclsEvaluation {
           ? Timestamp.fromDate(completedAt!) 
           : null,
       'timeSpentSeconds': timeSpentSeconds,
+      'timeLimitSeconds': timeLimitSeconds,
     };
   }
 
@@ -83,6 +87,7 @@ class AMCLclsEvaluation {
     DateTime? startedAt,
     DateTime? completedAt,
     int? timeSpentSeconds,
+    int? timeLimitSeconds,
   }) {
     return AMCLclsEvaluation(
       id: id ?? this.id,
@@ -96,6 +101,7 @@ class AMCLclsEvaluation {
       startedAt: startedAt ?? this.startedAt,
       completedAt: completedAt ?? this.completedAt,
       timeSpentSeconds: timeSpentSeconds ?? this.timeSpentSeconds,
+      timeLimitSeconds: timeLimitSeconds ?? this.timeLimitSeconds,
     );
   }
 }
